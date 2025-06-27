@@ -1,55 +1,54 @@
-import os
+from typing import Set
+
+from backend.core import llm_run
+import streamlit as st
 from dotenv import load_dotenv
-from langchain_core.prompts import PromptTemplate
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain_pinecone import PineconeVectorStore
-
-from langchain import hub  # which will download the retrival prompt
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain.chains.retrieval import create_retrieval_chain
-
 load_dotenv()
 
-if __name__ == "__main__":
-    print("Retrieving..")
+st.header("Retrieval QA Chat Prompt")
 
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/embedding-001",
-        google_api_key=os.getenv("GOOGLE_API_KEY")
-    )
+INDEX_NAME = "streamlit"
+prompt = st.text_input("prompt",placeholder="enter your prompt")
+if 'user_prompt_history' not in st.session_state:
+    st.session_state.user_prompt_history = []
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
-        google_api_key=os.getenv("GOOGLE_API_KEY")
-    )
+if 'chat_prompt_history' not in st.session_state:
+    st.session_state.chat_prompt_history = []
 
-    query = " what is pinecone in machine learning?"
-    chain = PromptTemplate.from_template(template=query) | llm
-    # result = chain.invoke(input = {})
-    # print(result.content)
 
-    vector_stores = PineconeVectorStore(index_name=os.environ["INDEX_NAME"],embedding=embeddings)
+def create_sources_string(source_urls:Set[str]) -> str:
+    if not source_urls:
+        return ""
+    sources_list = list(source_urls)
+    sources_list.sort()
+    sources_string = "sources:\n"
+    for i,source in enumerate(sources_list):
+        sources_string += f"{i+1}. {source}\n"
 
-    # retrieval_qa_chat_prompt = hub.pull("langchain-ai/retrieval_qa_chat")
+    return sources_string
 
-    retrieval_qa_chat_prompt = PromptTemplate.from_template(
-        """
-        Use the following context to answer the user's question. If you don't know the answer, just say you don't know.
 
-        Context:
-        {context}
+if prompt:
+    with st.spinner("Generating Responses..."):
+        generated_response = llm_run(prompt)
+        if "source_documents" in generated_response:
+            sources = set(doc.metadata["source"] for doc in generated_response["source_documents"])
+        else:
+            sources = set()
 
-        Question:
-        {input}
+        sources = set([doc.metadata["source"]for doc in generated_response["source_documents"]])
 
-        Answer:
-        """
-    )
+        formatted_response =  (
+            f"{generated_response['result']} \n\n {create_sources_string((sources))}"
+        )
 
-    combine_docs_chain = create_stuff_documents_chain(llm,retrieval_qa_chat_prompt)
-    retrival_chain = create_retrieval_chain(
-        retriever=vector_stores.as_retriever(),combine_docs_chain=combine_docs_chain
-    )
+    st.session_state.user_prompt_history.append(prompt)
+    st.session_state.chat_prompt_history.append(formatted_response)
+    import pprint
 
-    result = retrival_chain.invoke(input = {"input":query})
-    print(result)
+    pprint.pprint(generated_response)
+
+if st.session_state["user_prompt_history"]:
+    for generated_response,user_query in zip(st.session_state["user_prompt_history"]),st.session_state["chat_prompt_history"]:
+        st.chat_message("user").write(user_query)
+        st.chat_message("assistant").write(generated_response)

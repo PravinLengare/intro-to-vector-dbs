@@ -5,11 +5,7 @@ name = "pypi"
 
 [packages]
 langchain = "*"
-langchain-google-genai = "*"
-langchain-pinecone = "*"
-python-dotenv = "*"
-langchainhub = "*"
-black = "*"
+beautifulsoup4 = "*"
 
 [dev-packages]
 
